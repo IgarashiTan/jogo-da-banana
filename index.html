@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Jogo do Canhão de Banana</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 0 auto;
+        }
+        audio {
+            display: none; /* Esconde os elementos de áudio */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <audio id="shootSound" src="sounds/shoot.mp3"></audio> <!-- Som de disparo -->
+    <audio id="hitHoleSound" src="sounds/ding.mp3"></audio> <!-- Som feliz ao acertar o buraco -->
+    <audio id="hitChickenSound" src="sounds/boo.mp3"></audio> <!-- Som triste ao acertar uma galinha -->
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Carrega as imagens
+        const bananaImage = new Image();
+        bananaImage.src = 'images/banana.png';
+
+        const holeImage = new Image();
+        holeImage.src = 'images/hole.png';
+
+        const cannonImage = new Image();
+        cannonImage.src = 'images/cannon.png';
+
+        const grassImage = new Image();
+        grassImage.src = 'images/grass_single.png';
+
+        const wallImage = new Image();
+        wallImage.src = 'images/wall.png'; // Imagem da parede com 50x100 pixels
+
+        // Carrega os sons
+        const shootSound = document.getElementById('shootSound');
+        const hitHoleSound = document.getElementById('hitHoleSound');
+        const hitChickenSound = document.getElementById('hitChickenSound');
+
+        let cannon = {
+            x: 50,
+            y: 350, // Mantém a posição original do canhão
+            angle: 45,
+            length: 50,
+            baseWidth: 80,
+            compressedWidth: 40,
+            compression: 0,
+            compressionSpeed: 0.1,
+            compressionDuration: 0
+        };
+
+        let banana = {
+            x: 0,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            active: false,
+            rotation: 0
+        };
+
+        let hole = {
+            x: 700,
+            y: 371, // Mantém o ajuste para alinhar com o chão
+            radius: 20,
+            speed: 2,
+            direction: -1,
+            minX: 400,
+            maxX: 750
+        };
+
+        let gravity = 0.5;
+        let shooting = false;
+        let showMessage = false;
+        let messageTimer = 0;
+        let shotPower = 0;
+        let score = 0;
+        let stars = []; // Estrelas do buraco, galinhas e parede
+        let chickens = []; // Array para armazenar as galinhas
+        let chickenDifficulty = 0.005; // Probabilidade inicial de gerar galinhas (aumenta com os pontos)
+        let lives = 10; // Quantidade máxima de vidas
+        let gameOver = false; // Estado do jogo (terminado ou não)
+
+        // Função para reiniciar o jogo recarregando a página
+        function resetGame() {
+            window.location.reload(); // Recarrega a página inteira
+        }
+
+        // Função para criar uma galinha
+        function createChicken() {
+            return {
+                x: canvas.width + 50, // Começa fora da tela, à direita
+                y: Math.random() * 300, // Posição vertical aleatória no céu (acima do chão, até y = 350)
+                speed: -(2 + Math.random() * 2), // Velocidade horizontal negativa (da direita para a esquerda, 2 a 4 pixels por frame)
+                width: 40, // Largura da galinha
+                height: 30 // Altura da galinha
+            };
+        }
+
+        // Função para criar uma estrela (para buraco, galinhas ou parede)
+        function createStar(x, y) {
+            return {
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 5,
+                vy: -Math.random() * 5 - 2,
+                size: 5 + Math.random() * 5,
+                life: 20 + Math.random() * 10
+            };
+        }
+
+        // Função para tocar sons
+        function playSound(sound) {
+            sound.currentTime = 0; // Reinicia o som para tocar do início
+            sound.play().catch(error => console.log("Erro ao tocar som:", error));
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!gameOver) { // Apenas se o jogo não estiver terminado
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                let dx = mouseX - cannon.x;
+                let dy = mouseY - cannon.y;
+                cannon.angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+
+                shotPower = Math.sqrt(dx * dx + dy * dy) / 10;
+                shotPower = Math.min(Math.max(shotPower, 5), 25);
+            }
+        });
+
+        canvas.addEventListener('click', (e) => {
+            if (gameOver) { // Reinicia o jogo recarregando a página se estiver em Game Over
+                resetGame();
+            } else if (!shooting) { // Dispara normalmente se o jogo não estiver terminado
+                shooting = true;
+                banana.active = true;
+                banana.x = cannon.x + Math.cos(cannon.angle * Math.PI / 180) * cannon.length;
+                banana.y = cannon.y - Math.sin(cannon.angle * Math.PI / 180) * cannon.length;
+                banana.vx = Math.cos(cannon.angle * Math.PI / 180) * shotPower;
+                banana.vy = -Math.sin(cannon.angle * Math.PI / 180) * shotPower;
+                banana.rotation = cannon.angle * Math.PI / 180;
+
+                cannon.compression = 0;
+                cannon.compressionSpeed = 0.1;
+                cannon.compressionDuration = 10;
+
+                // Toca o som de disparo
+                playSound(shootSound);
+            }
+        });
+
+        function drawCannon() {
+            ctx.save();
+            ctx.translate(cannon.x, cannon.y);
+
+            ctx.fillStyle = 'darkgray';
+            ctx.beginPath();
+            ctx.moveTo(-20, 0);
+            ctx.lineTo(20, 0);
+            ctx.lineTo(10, -30);
+            ctx.lineTo(-10, -30);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.rotate(-cannon.angle * Math.PI / 180);
+
+            const currentWidth = cannon.baseWidth - (cannon.baseWidth - cannon.compressedWidth) * cannon.compression;
+            const cannonHeight = 42;
+            ctx.drawImage(cannonImage, 0, -cannonHeight / 2, currentWidth, cannonHeight);
+
+            ctx.restore();
+        }
+
+        function drawBanana() {
+            if (banana.active) {
+                ctx.save();
+                ctx.translate(banana.x, banana.y);
+                ctx.rotate(banana.rotation);
+
+                const bananaWidth = 60; // Mantém o tamanho ajustado
+                const bananaHeight = 30; // Mantém o tamanho ajustado
+                ctx.drawImage(bananaImage, -bananaWidth / 2, -bananaHeight / 2, bananaWidth, bananaHeight);
+
+                ctx.restore();
+                banana.rotation += 0.1;
+            }
+        }
+
+        function drawHole() {
+            const holeWidth = 80;
+            const holeHeight = 50;
+            ctx.drawImage(holeImage, hole.x - holeWidth / 2, hole.y - holeHeight / 2, holeWidth, holeHeight);
+        }
+
+        function drawWall() {
+            // Desenha a parede usando a imagem
+            ctx.drawImage(wallImage, 300 - 25, 250, 50, 100); // Parede centrada em x = 300, com largura 50, altura 100, começando em y = 250
+        }
+
+        function drawChicken(chicken) {
+            // Desenha uma galinha simples no canvas (estilo cartoon original)
+            ctx.save();
+            ctx.translate(chicken.x, chicken.y);
+
+            // Corpo (círculo amarelo)
+            ctx.beginPath();
+            ctx.arc(0, 0, chicken.width / 2, 0, Math.PI * 2);
+            ctx.fillStyle = 'yellow';
+            ctx.fill();
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Bico (triângulo laranja)
+            ctx.beginPath();
+            ctx.moveTo(chicken.width / 4, -chicken.height / 4);
+            ctx.lineTo(chicken.width / 2, 0);
+            ctx.lineTo(chicken.width / 4, chicken.height / 4);
+            ctx.fillStyle = 'orange';
+            ctx.fill();
+
+            // Asas (linhas curvas pretas)
+            ctx.beginPath();
+            ctx.moveTo(-chicken.width / 4, -chicken.height / 4);
+            ctx.quadraticCurveTo(-chicken.width / 2, 0, -chicken.width / 4, chicken.height / 4);
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function updateHole() {
+            if (!gameOver) { // Apenas se o jogo não estiver terminado
+                hole.x += hole.speed * hole.direction;
+                if (hole.x <= hole.minX) {
+                    hole.direction = 1;
+                } else if (hole.x >= hole.maxX) {
+                    hole.direction = -1;
+                }
+            }
+        }
+
+        function updateCannonCompression() {
+            if (cannon.compressionDuration > 0) {
+                cannon.compression += cannon.compressionSpeed;
+                cannon.compression = Math.min(cannon.compression, 1);
+                cannon.compressionDuration--;
+
+                if (cannon.compressionDuration === 0) {
+                    cannon.compressionSpeed = -0.1;
+                    let returnDuration = 15;
+
+                    function returnToNormal() {
+                        if (returnDuration > 0) {
+                            cannon.compression += cannon.compressionSpeed;
+                            cannon.compression = Math.max(cannon.compression, 0);
+                            returnDuration--;
+                            requestAnimationFrame(returnToNormal);
+                        } else {
+                            cannon.compression = 0;
+                        }
+                    }
+                    returnToNormal();
+                }
+            }
+        }
+
+        function updateChickens() {
+            if (!gameOver) { // Apenas se o jogo não estiver terminado
+                for (let i = chickens.length - 1; i >= 0; i--) {
+                    let chicken = chickens[i];
+                    chicken.x += chicken.speed; // Move para a esquerda (velocidade negativa)
+
+                    // Remove a galinha se sair da tela
+                    if (chicken.x < -50) {
+                        chickens.splice(i, 1);
+                    }
+
+                    // Verifica colisão com a banana
+                    if (banana.active) {
+                        if (
+                            banana.x + 30 > chicken.x - chicken.width / 2 && // Ajuste para a largura da banana (60 / 2 = 30)
+                            banana.x - 30 < chicken.x + chicken.width / 2 &&
+                            banana.y + 15 > chicken.y - chicken.height / 2 && // Ajuste para a altura da banana (30 / 2 = 15)
+                            banana.y - 15 < chicken.y + chicken.height / 2
+                        ) {
+                            resetBanana(); // Destroi a banana ao colidir com a galinha
+                            lives--; // Perde uma vida ao colidir com a galinha
+
+                            // Toca o som triste ao acertar uma galinha
+                            playSound(hitChickenSound);
+
+                            // Cria estrelas explodindo na posição da galinha
+                            for (let j = 0; j < 10; j++) {
+                                stars.push(createStar(chicken.x, chicken.y));
+                            }
+
+                            // Verifica se o jogo terminou
+                            if (lives <= 0) {
+                                gameOver = true;
+                            }
+                        }
+                    }
+                }
+
+                // Gera novas galinhas aleatoriamente, com dificuldade aumentada pelo score
+                const maxDifficulty = 0.02; // Limite máximo para evitar excesso de galinhas
+                if (Math.random() < Math.min(chickenDifficulty, maxDifficulty)) { // Probabilidade ajustada
+                    chickens.push(createChicken());
+                }
+            }
+        }
+
+        function drawChickens() {
+            chickens.forEach(chicken => drawChicken(chicken));
+        }
+
+        function drawStar(star) {
+            ctx.save();
+            ctx.translate(star.x, star.y);
+
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                let angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+                let outerRadius = star.size;
+                let innerRadius = star.size / 2;
+                let x = Math.cos(angle) * (i % 2 === 0 ? outerRadius : innerRadius);
+                let y = Math.sin(angle) * (i % 2 === 0 ? outerRadius : innerRadius);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = 'gold';
+            ctx.fill();
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function updateStars() {
+            for (let i = stars.length - 1; i >= 0; i--) {
+                let star = stars[i];
+                star.x += star.vx;
+                star.y += star.vy;
+                star.vy += 0.2;
+                star.life--;
+                if (star.life <= 0) {
+                    stars.splice(i, 1);
+                }
+            }
+        }
+
+        function drawStars() {
+            stars.forEach(star => drawStar(star));
+        }
+
+        function drawGrass() {
+            const grassWidth = 800;
+            const grassHeight = 61; // Mantém a altura ajustada para 61 pixels
+            ctx.drawImage(grassImage, 0, 339, grassWidth, grassHeight); // Mantém y = 339
+        }
+
+        function drawWall() {
+            // Desenha a parede usando a imagem
+            ctx.drawImage(wallImage, 300 - 25, 250, 50, 100); // Parede centrada em x = 300, com largura 50, altura 100, começando em y = 250
+        }
+
+        function drawSky() {
+            // Cria um gradiente linear para o céu, ajustado para ficar atrás da grama
+            const gradient = ctx.createLinearGradient(0, 0, 0, 350); // Do topo ao y = 350 (onde começa a grama visível)
+            gradient.addColorStop(0, '#ADD8E6'); // Azul mais claro no topo (LightBlue)
+            gradient.addColorStop(1, '#87CEFA'); // Azul médio no horizonte (Light Sky Blue)
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, 350); // Preenche o céu até y = 350
+        }
+
+        function drawLifeBar() {
+            // Desenha a barra de vida na parte superior do canvas
+            const barWidth = 200; // Largura da barra
+            const barHeight = 20; // Altura da barra
+            const barX = (canvas.width - barWidth) / 2; // Centraliza horizontalmente
+            const barY = 10; // Posição vertical no topo
+
+            // Fundo da barra (cinza)
+            ctx.fillStyle = 'gray';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+
+            // Vida atual (verde se > 3 vidas, vermelho se <= 3 vidas)
+            ctx.fillStyle = lives > 3 ? 'green' : 'red';
+            const lifeWidth = (lives / 10) * barWidth; // Proporcional às 10 vidas máximas
+            ctx.fillRect(barX, barY, lifeWidth, barHeight);
+
+            // Borda da barra (preta)
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+            // Texto das vidas
+            ctx.fillStyle = 'black';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Vidas: ${lives}`, canvas.width / 2, barY + barHeight + 15);
+        }
+
+        function drawMessage() {
+            if (showMessage) {
+                ctx.font = '30px Arial';
+                ctx.fillStyle = 'red';
+                ctx.textAlign = 'center';
+                ctx.fillText('PARABÉNS, A BANANA ENTROU!', canvas.width / 2, 100);
+                messageTimer--;
+                if (messageTimer <= 0) {
+                    showMessage = false;
+                }
+            } else if (gameOver) {
+                ctx.font = '50px Arial';
+                ctx.fillStyle = 'red';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 50);
+
+                // Desenha o quadro com a pontuação final
+                const scoreText = `Pontuação: ${score}`;
+                ctx.font = '30px Arial';
+                const textWidth = ctx.measureText(scoreText).width;
+                const padding = 20;
+                const boxWidth = textWidth + padding * 2;
+                const boxHeight = 50;
+                const boxX = (canvas.width - boxWidth) / 2;
+                const boxY = canvas.height / 2;
+
+                ctx.fillStyle = 'gray';
+                ctx.fillRect(boxX, boxY - 25, boxWidth, boxHeight);
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(boxX, boxY - 25, boxWidth, boxHeight);
+
+                ctx.fillStyle = 'black';
+                ctx.fillText(scoreText, canvas.width / 2, boxY + 10);
+
+                ctx.font = '20px Arial';
+                ctx.fillText('Clique para reiniciar', canvas.width / 2, canvas.height / 2 + 50);
+            }
+        }
+
+        function drawPowerIndicator() {
+            if (!gameOver) { // Apenas se o jogo não estiver terminado
+                ctx.font = '16px Arial';
+                ctx.fillStyle = 'blue';
+                ctx.textAlign = 'left';
+                ctx.fillText(`Força: ${Math.round(shotPower)}`, 10, 30);
+            }
+        }
+
+        function drawScore() {
+            if (!gameOver) { // Apenas se o jogo não estiver terminado
+                ctx.font = '16px Arial';
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'right';
+                ctx.fillText(`Pontos: ${score}`, canvas.width - 10, 30);
+            }
+        }
+
+        function updateBanana() {
+            if (!gameOver && banana.active) { // Apenas se o jogo não estiver terminado
+                banana.x += banana.vx;
+                banana.y += banana.vy;
+                banana.vy += gravity;
+
+                const holeWidth = 80;
+                let dx = banana.x - hole.x;
+                let dy = banana.y - hole.y;
+                if (Math.sqrt(dx * dx + dy * dy) < (holeWidth / 2) + 15) {
+                    score++;
+                    showMessage = true;
+                    messageTimer = 120;
+                    resetBanana();
+
+                    // Toca o som feliz ao acertar o buraco
+                    playSound(hitHoleSound);
+
+                    for (let i = 0; i < 10; i++) {
+                        stars.push(createStar(hole.x, hole.y));
+                    }
+
+                    // Aumenta a dificuldade (mais galinhas) a cada ponto marcado
+                    chickenDifficulty += 0.002; // Aumenta a probabilidade em 0.002 por ponto
+                }
+
+                // Verifica colisão com a parede
+                if (
+                    banana.x + 30 > 300 - 25 && // Ajuste para a largura da banana (60 / 2 = 30) e posição da parede (300 - 25)
+                    banana.x - 30 < 300 + 25 && // Largura da parede (50 / 2 = 25)
+                    banana.y + 15 > 250 && // Ajuste para a altura da banana (30 / 2 = 15) e topo da parede (y = 250)
+                    banana.y - 15 < 350 // Base da parede (y = 350)
+                ) {
+                    resetBanana(); // Destroi a banana ao colidir com a parede
+
+                    // Cria estrelas explodindo na posição da colisão com a parede (centro da parede, x = 300)
+                    for (let i = 0; i < 10; i++) {
+                        stars.push(createStar(300, banana.y)); // Posição central da parede, y da banana
+                    }
+                }
+
+                if (banana.y > canvas.height || banana.x > canvas.width || banana.x < 0) {
+                    resetBanana();
+                }
+            }
+        }
+
+        function resetBanana() {
+            banana.active = false;
+            shooting = false;
+        }
+
+        function draw() {
+            if (!gameOver) { // Apenas se o jogo não estiver terminado
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawSky(); // Desenha o céu antes dos outros elementos
+                drawGrass(); // Desenha a grama depois do céu
+                drawWall(); // Desenha a parede
+                updateCannonCompression();
+                drawCannon();
+                drawBanana();
+                drawHole();
+                drawChickens(); // Desenha as galinhas
+                updateChickens(); // Atualiza as posições das galinhas
+                drawStars();
+                updateStars();
+                drawMessage();
+                drawLifeBar(); // Desenha a barra de vida
+                drawPowerIndicator();
+                drawScore();
+                updateBanana();
+                updateHole();
+                requestAnimationFrame(draw);
+            } else {
+                // Se o jogo terminou, apenas desenha a mensagem de Game Over
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawSky(); // Mantém o céu visível
+                drawGrass(); // Mantém a grama visível
+                drawWall(); // Mantém a parede visível
+                drawChickens(); // Mantém as galinhas visíveis (paradas)
+                drawMessage(); // Mostra "GAME OVER"
+                drawLifeBar(); // Mostra a barra de vida vazia
+                requestAnimationFrame(draw); // Mantém a animação para permitir o clique
+            }
+        }
+
+        // Aguarda o carregamento de todas as imagens antes de iniciar o jogo
+        bananaImage.onload = function() {
+            holeImage.onload = function() {
+                cannonImage.onload = function() {
+                    grassImage.onload = function() {
+                        wallImage.onload = function() {
+                            draw();
+                        };
+                    };
+                };
+            };
+        };
+    </script>
+</body>
+</html>
