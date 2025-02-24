@@ -46,7 +46,7 @@
 
         let cannon = {
             x: 50,
-            y: 350, // Mantém a posição original do canhão
+            y: 350,
             angle: 45,
             length: 50,
             baseWidth: 80,
@@ -67,7 +67,7 @@
 
         let hole = {
             x: 700,
-            y: 371, // Mantém o ajuste para alinhar com o chão
+            y: 371,
             radius: 20,
             speed: 2,
             direction: -1,
@@ -81,29 +81,28 @@
         let messageTimer = 0;
         let shotPower = 0;
         let score = 0;
-        let stars = []; // Estrelas do buraco, galinhas e parede
-        let chickens = []; // Array para armazenar as galinhas
-        let chickenDifficulty = 0.005; // Probabilidade inicial de gerar galinhas (aumenta com os pontos)
-        let lives = 10; // Quantidade máxima de vidas
-        let gameOver = false; // Estado do jogo (terminado ou não)
+        let stars = [];
+        let chickens = [];
+        let chickenDifficulty = 0.005;
+        let lives = 10;
+        let gameOver = false;
+        let startCountdown = 5;
+        let isStarting = true;
 
-        // Função para reiniciar o jogo recarregando a página
         function resetGame() {
-            window.location.reload(); // Recarrega a página inteira
+            window.location.reload();
         }
 
-        // Função para criar uma galinha
         function createChicken() {
             return {
-                x: canvas.width + 50, // Começa fora da tela, à direita
-                y: Math.random() * 300, // Posição vertical aleatória no céu (acima do chão, até y = 350)
-                speed: -(2 + Math.random() * 2), // Velocidade horizontal negativa (da direita para a esquerda, 2 a 4 pixels por frame)
-                width: 40, // Largura da galinha
-                height: 30 // Altura da galinha
+                x: canvas.width + 50,
+                y: Math.random() * 300,
+                speed: -(2 + Math.random() * 2),
+                width: 40,
+                height: 30
             };
         }
 
-        // Função para criar uma estrela (para buraco, galinhas ou parede)
         function createStar(x, y) {
             return {
                 x: x,
@@ -115,14 +114,13 @@
             };
         }
 
-        // Função para tocar sons
         function playSound(sound) {
-            sound.currentTime = 0; // Reinicia o som para tocar do início
+            sound.currentTime = 0;
             sound.play().catch(error => console.log("Erro ao tocar som:", error));
         }
 
         canvas.addEventListener('mousemove', (e) => {
-            if (!gameOver) { // Apenas se o jogo não estiver terminado
+            if (!gameOver && !isStarting) {
                 const rect = canvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
@@ -136,9 +134,9 @@
         });
 
         canvas.addEventListener('click', (e) => {
-            if (gameOver) { // Reinicia o jogo recarregando a página se estiver em Game Over
+            if (gameOver) {
                 resetGame();
-            } else if (!shooting) { // Dispara normalmente se o jogo não estiver terminado
+            } else if (!shooting && !isStarting) {
                 shooting = true;
                 banana.active = true;
                 banana.x = cannon.x + Math.cos(cannon.angle * Math.PI / 180) * cannon.length;
@@ -151,7 +149,6 @@
                 cannon.compressionSpeed = 0.1;
                 cannon.compressionDuration = 10;
 
-                // Toca o som de disparo
                 playSound(shootSound);
             }
         });
@@ -184,8 +181,8 @@
                 ctx.translate(banana.x, banana.y);
                 ctx.rotate(banana.rotation);
 
-                const bananaWidth = 60; // Mantém o tamanho ajustado
-                const bananaHeight = 30; // Mantém o tamanho ajustado
+                const bananaWidth = 60;
+                const bananaHeight = 30;
                 ctx.drawImage(bananaImage, -bananaWidth / 2, -bananaHeight / 2, bananaWidth, bananaHeight);
 
                 ctx.restore();
@@ -200,16 +197,13 @@
         }
 
         function drawWall() {
-            // Desenha a parede usando a imagem
-            ctx.drawImage(wallImage, 300 - 25, 250, 50, 100); // Parede centrada em x = 300, com largura 50, altura 100, começando em y = 250
+            ctx.drawImage(wallImage, 300 - 25, 250, 50, 100);
         }
 
         function drawChicken(chicken) {
-            // Desenha uma galinha simples no canvas (estilo cartoon original)
             ctx.save();
             ctx.translate(chicken.x, chicken.y);
 
-            // Corpo (círculo amarelo)
             ctx.beginPath();
             ctx.arc(0, 0, chicken.width / 2, 0, Math.PI * 2);
             ctx.fillStyle = 'yellow';
@@ -218,7 +212,6 @@
             ctx.lineWidth = 1;
             ctx.stroke();
 
-            // Bico (triângulo laranja)
             ctx.beginPath();
             ctx.moveTo(chicken.width / 4, -chicken.height / 4);
             ctx.lineTo(chicken.width / 2, 0);
@@ -226,7 +219,6 @@
             ctx.fillStyle = 'orange';
             ctx.fill();
 
-            // Asas (linhas curvas pretas)
             ctx.beginPath();
             ctx.moveTo(-chicken.width / 4, -chicken.height / 4);
             ctx.quadraticCurveTo(-chicken.width / 2, 0, -chicken.width / 4, chicken.height / 4);
@@ -238,7 +230,7 @@
         }
 
         function updateHole() {
-            if (!gameOver) { // Apenas se o jogo não estiver terminado
+            if (!gameOver && !isStarting) {
                 hole.x += hole.speed * hole.direction;
                 if (hole.x <= hole.minX) {
                     hole.direction = 1;
@@ -249,7 +241,7 @@
         }
 
         function updateCannonCompression() {
-            if (cannon.compressionDuration > 0) {
+            if (cannon.compressionDuration > 0 && !isStarting) {
                 cannon.compression += cannon.compressionSpeed;
                 cannon.compression = Math.min(cannon.compression, 1);
                 cannon.compressionDuration--;
@@ -274,36 +266,30 @@
         }
 
         function updateChickens() {
-            if (!gameOver) { // Apenas se o jogo não estiver terminado
+            if (!gameOver && !isStarting) {
                 for (let i = chickens.length - 1; i >= 0; i--) {
                     let chicken = chickens[i];
-                    chicken.x += chicken.speed; // Move para a esquerda (velocidade negativa)
+                    chicken.x += chicken.speed;
 
-                    // Remove a galinha se sair da tela
                     if (chicken.x < -50) {
                         chickens.splice(i, 1);
                     }
 
-                    // Verifica colisão com a banana
                     if (banana.active) {
                         if (
-                            banana.x + 30 > chicken.x - chicken.width / 2 && // Ajuste para a largura da banana (60 / 2 = 30)
+                            banana.x + 30 > chicken.x - chicken.width / 2 &&
                             banana.x - 30 < chicken.x + chicken.width / 2 &&
-                            banana.y + 15 > chicken.y - chicken.height / 2 && // Ajuste para a altura da banana (30 / 2 = 15)
+                            banana.y + 15 > chicken.y - chicken.height / 2 &&
                             banana.y - 15 < chicken.y + chicken.height / 2
                         ) {
-                            resetBanana(); // Destroi a banana ao colidir com a galinha
-                            lives--; // Perde uma vida ao colidir com a galinha
-
-                            // Toca o som triste ao acertar uma galinha
+                            resetBanana();
+                            lives--;
                             playSound(hitChickenSound);
 
-                            // Cria estrelas explodindo na posição da galinha
                             for (let j = 0; j < 10; j++) {
                                 stars.push(createStar(chicken.x, chicken.y));
                             }
 
-                            // Verifica se o jogo terminou
                             if (lives <= 0) {
                                 gameOver = true;
                             }
@@ -311,16 +297,17 @@
                     }
                 }
 
-                // Gera novas galinhas aleatoriamente, com dificuldade aumentada pelo score
-                const maxDifficulty = 0.02; // Limite máximo para evitar excesso de galinhas
-                if (Math.random() < Math.min(chickenDifficulty, maxDifficulty)) { // Probabilidade ajustada
+                const maxDifficulty = 0.02;
+                if (Math.random() < Math.min(chickenDifficulty, maxDifficulty)) {
                     chickens.push(createChicken());
                 }
             }
         }
 
         function drawChickens() {
-            chickens.forEach(chicken => drawChicken(chicken));
+            if (!isStarting) {
+                chickens.forEach(chicken => drawChicken(chicken));
+            }
         }
 
         function drawStar(star) {
@@ -348,65 +335,58 @@
         }
 
         function updateStars() {
-            for (let i = stars.length - 1; i >= 0; i--) {
-                let star = stars[i];
-                star.x += star.vx;
-                star.y += star.vy;
-                star.vy += 0.2;
-                star.life--;
-                if (star.life <= 0) {
-                    stars.splice(i, 1);
+            if (!isStarting) {
+                for (let i = stars.length - 1; i >= 0; i--) {
+                    let star = stars[i];
+                    star.x += star.vx;
+                    star.y += star.vy;
+                    star.vy += 0.2;
+                    star.life--;
+                    if (star.life <= 0) {
+                        stars.splice(i, 1);
+                    }
                 }
             }
         }
 
         function drawStars() {
-            stars.forEach(star => drawStar(star));
+            if (!isStarting) {
+                stars.forEach(star => drawStar(star));
+            }
         }
 
         function drawGrass() {
             const grassWidth = 800;
-            const grassHeight = 61; // Mantém a altura ajustada para 61 pixels
-            ctx.drawImage(grassImage, 0, 339, grassWidth, grassHeight); // Mantém y = 339
-        }
-
-        function drawWall() {
-            // Desenha a parede usando a imagem
-            ctx.drawImage(wallImage, 300 - 25, 250, 50, 100); // Parede centrada em x = 300, com largura 50, altura 100, começando em y = 250
+            const grassHeight = 61;
+            ctx.drawImage(grassImage, 0, 339, grassWidth, grassHeight);
         }
 
         function drawSky() {
-            // Cria um gradiente linear para o céu, ajustado para ficar atrás da grama
-            const gradient = ctx.createLinearGradient(0, 0, 0, 350); // Do topo ao y = 350 (onde começa a grama visível)
-            gradient.addColorStop(0, '#ADD8E6'); // Azul mais claro no topo (LightBlue)
-            gradient.addColorStop(1, '#87CEFA'); // Azul médio no horizonte (Light Sky Blue)
+            const gradient = ctx.createLinearGradient(0, 0, 0, 350);
+            gradient.addColorStop(0, '#ADD8E6');
+            gradient.addColorStop(1, '#87CEFA');
 
             ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, canvas.width, 350); // Preenche o céu até y = 350
+            ctx.fillRect(0, 0, canvas.width, 350);
         }
 
         function drawLifeBar() {
-            // Desenha a barra de vida na parte superior do canvas
-            const barWidth = 200; // Largura da barra
-            const barHeight = 20; // Altura da barra
-            const barX = (canvas.width - barWidth) / 2; // Centraliza horizontalmente
-            const barY = 10; // Posição vertical no topo
+            const barWidth = 200;
+            const barHeight = 20;
+            const barX = (canvas.width - barWidth) / 2;
+            const barY = 10;
 
-            // Fundo da barra (cinza)
             ctx.fillStyle = 'gray';
             ctx.fillRect(barX, barY, barWidth, barHeight);
 
-            // Vida atual (verde se > 3 vidas, vermelho se <= 3 vidas)
             ctx.fillStyle = lives > 3 ? 'green' : 'red';
-            const lifeWidth = (lives / 10) * barWidth; // Proporcional às 10 vidas máximas
+            const lifeWidth = (lives / 10) * barWidth;
             ctx.fillRect(barX, barY, lifeWidth, barHeight);
 
-            // Borda da barra (preta)
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 2;
             ctx.strokeRect(barX, barY, barWidth, barHeight);
 
-            // Texto das vidas
             ctx.fillStyle = 'black';
             ctx.font = '16px Arial';
             ctx.textAlign = 'center';
@@ -429,7 +409,6 @@
                 ctx.textAlign = 'center';
                 ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 50);
 
-                // Desenha o quadro com a pontuação final
                 const scoreText = `Pontuação: ${score}`;
                 ctx.font = '30px Arial';
                 const textWidth = ctx.measureText(scoreText).width;
@@ -450,11 +429,33 @@
 
                 ctx.font = '20px Arial';
                 ctx.fillText('Clique para reiniciar', canvas.width / 2, canvas.height / 2 + 50);
+            } else if (isStarting) {
+                const message = "ACERTE A BANANA NO BURACO";
+                ctx.font = '40px Arial';
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'center';
+                const textWidth = ctx.measureText(message).width;
+                const padding = 20;
+                const boxWidth = textWidth + padding * 2;
+                const boxHeight = 80;
+                const boxX = (canvas.width - boxWidth) / 2;
+                const boxY = (canvas.height - boxHeight) / 2 - 20;
+
+                ctx.fillStyle = 'gray';
+                ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+                ctx.fillStyle = 'black';
+                ctx.fillText(message, canvas.width / 2, boxY + 40);
+                ctx.font = '30px Arial';
+                ctx.fillText(Math.ceil(startCountdown), canvas.width / 2, boxY + 70);
             }
         }
 
         function drawPowerIndicator() {
-            if (!gameOver) { // Apenas se o jogo não estiver terminado
+            if (!gameOver && !isStarting) {
                 ctx.font = '16px Arial';
                 ctx.fillStyle = 'blue';
                 ctx.textAlign = 'left';
@@ -463,7 +464,7 @@
         }
 
         function drawScore() {
-            if (!gameOver) { // Apenas se o jogo não estiver terminado
+            if (!gameOver && !isStarting) {
                 ctx.font = '16px Arial';
                 ctx.fillStyle = 'black';
                 ctx.textAlign = 'right';
@@ -472,7 +473,7 @@
         }
 
         function updateBanana() {
-            if (!gameOver && banana.active) { // Apenas se o jogo não estiver terminado
+            if (!gameOver && !isStarting && banana.active) {
                 banana.x += banana.vx;
                 banana.y += banana.vy;
                 banana.vy += gravity;
@@ -486,29 +487,25 @@
                     messageTimer = 120;
                     resetBanana();
 
-                    // Toca o som feliz ao acertar o buraco
                     playSound(hitHoleSound);
 
                     for (let i = 0; i < 10; i++) {
                         stars.push(createStar(hole.x, hole.y));
                     }
 
-                    // Aumenta a dificuldade (mais galinhas) a cada ponto marcado
-                    chickenDifficulty += 0.002; // Aumenta a probabilidade em 0.002 por ponto
+                    chickenDifficulty += 0.002;
                 }
 
-                // Verifica colisão com a parede
                 if (
-                    banana.x + 30 > 300 - 25 && // Ajuste para a largura da banana (60 / 2 = 30) e posição da parede (300 - 25)
-                    banana.x - 30 < 300 + 25 && // Largura da parede (50 / 2 = 25)
-                    banana.y + 15 > 250 && // Ajuste para a altura da banana (30 / 2 = 15) e topo da parede (y = 250)
-                    banana.y - 15 < 350 // Base da parede (y = 350)
+                    banana.x + 30 > 300 - 25 &&
+                    banana.x - 30 < 300 + 25 &&
+                    banana.y + 15 > 250 &&
+                    banana.y - 15 < 350
                 ) {
-                    resetBanana(); // Destroi a banana ao colidir com a parede
+                    resetBanana();
 
-                    // Cria estrelas explodindo na posição da colisão com a parede (centro da parede, x = 300)
                     for (let i = 0; i < 10; i++) {
-                        stars.push(createStar(300, banana.y)); // Posição central da parede, y da banana
+                        stars.push(createStar(300, banana.y));
                     }
                 }
 
@@ -524,40 +521,44 @@
         }
 
         function draw() {
-            if (!gameOver) { // Apenas se o jogo não estiver terminado
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                drawSky(); // Desenha o céu antes dos outros elementos
-                drawGrass(); // Desenha a grama depois do céu
-                drawWall(); // Desenha a parede
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawSky();
+            drawGrass();
+            drawWall();
+
+            if (isStarting) {
+                drawMessage();
+            } else if (!gameOver) {
                 updateCannonCompression();
                 drawCannon();
                 drawBanana();
                 drawHole();
-                drawChickens(); // Desenha as galinhas
-                updateChickens(); // Atualiza as posições das galinhas
+                drawChickens();
+                updateChickens();
                 drawStars();
                 updateStars();
                 drawMessage();
-                drawLifeBar(); // Desenha a barra de vida
+                drawLifeBar();
                 drawPowerIndicator();
                 drawScore();
                 updateBanana();
                 updateHole();
-                requestAnimationFrame(draw);
             } else {
-                // Se o jogo terminou, apenas desenha a mensagem de Game Over
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                drawSky(); // Mantém o céu visível
-                drawGrass(); // Mantém a grama visível
-                drawWall(); // Mantém a parede visível
-                drawChickens(); // Mantém as galinhas visíveis (paradas)
-                drawMessage(); // Mostra "GAME OVER"
-                drawLifeBar(); // Mostra a barra de vida vazia
-                requestAnimationFrame(draw); // Mantém a animação para permitir o clique
+                drawChickens();
+                drawMessage();
+                drawLifeBar();
+            }
+            requestAnimationFrame(draw);
+
+            if (isStarting) {
+                startCountdown -= 1 / 60;
+                if (startCountdown <= 0) {
+                    isStarting = false;
+                    startCountdown = 5;
+                }
             }
         }
 
-        // Aguarda o carregamento de todas as imagens antes de iniciar o jogo
         bananaImage.onload = function() {
             holeImage.onload = function() {
                 cannonImage.onload = function() {
