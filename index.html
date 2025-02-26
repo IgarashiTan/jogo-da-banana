@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Jogo do Canhão de Banana</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 0 auto;
+        }
+        audio {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="1200" height="600"></canvas>
+    <audio id="shootSound" src="sounds/shoot.mp3"></audio>
+    <audio id="hitHoleSound" src="sounds/ding.mp3"></audio>
+    <audio id="hitChickenSound" src="sounds/boo.mp3"></audio>
+    <audio id="silverHitSound" src="sounds/silverHit.mp3"></audio>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const backgroundImage = new Image();
+        backgroundImage.src = 'images/background.png';
+        
+        const bananaImage = new Image();
+        bananaImage.src = 'images/banana.png';
+
+        const holeImage = new Image();
+        holeImage.src = 'images/hole.png';
+
+        const cannonImage = new Image();
+        cannonImage.src = 'images/cannon.png';
+
+        const wheelImage = new Image();
+        wheelImage.src = 'images/wheel.png';
+
+        const silverBananaImage = new Image();
+        silverBananaImage.src = 'images/silverBanana.png';
+
+        const gameOverBackgroundImage = new Image();
+        gameOverBackgroundImage.src = 'images/gameOverBackground.png';
+
+        const chickenFrames = [];
+        const totalChickenFrames = 20;
+        for (let i = 1; i <= totalChickenFrames; i++) {
+            const frame = new Image();
+            frame.src = `images/chickenAnimation/chicken_${i.toString().padStart(2, '0')}.png`;
+            chickenFrames.push(frame);
+        }
+
+        const shootSound = document.getElementById('shootSound');
+        const hitHoleSound = document.getElementById('hitHoleSound');
+        const hitChickenSound = document.getElementById('hitChickenSound');
+        const silverHitSound = document.getElementById('silverHitSound');
+
+        let cannon = {
+            x: 50,
+            y: 550,
+            angle: 45,
+            length: 113,
+            baseWidth: 113,
+            compressedWidth: 56,
+            compression: 0,
+            compressionSpeed: 0.1,
+            compressionDuration: 0
+        };
+
+        let banana = {
+            x: 0,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            active: false,
+            rotation: 0,
+            chickensPassed: 0
+        };
+
+        let hole = {
+            x: 1100,
+            y: 571,
+            radius: 20,
+            speed: 2,
+            direction: -1,
+            minX: 600,
+            maxX: 1150
+        };
+
+        let gravity = 0.5;
+        let shooting = false;
+        let showMessage = false;
+        let messageTimer = 0;
+        let shotPower = 0;
+        let score = 0;
+        let holeHits = 0;
+        let totalChickensPassed = 0;
+        let stars = [];
+        let silverParticles = [];
+        let chickens = [];
+        let silverBananas = [];
+        let chickenDifficulty = 0.005;
+        let lives = 10;
+        let gameOver = false;
+        let startCountdown = 5;
+        let isStarting = true;
+        let gameStarted = false;
+        let frameCounter = 0;
+        const animationSpeed = 2;
+
+        let extraPointsMessage = {
+            active: false,
+            points: 0,
+            timer: 0,
+            duration: 120
+        };
+
+        function resetGame() {
+            window.location.reload();
+        }
+
+        function createChicken() {
+            return {
+                x: canvas.width + 50,
+                y: Math.random() * 450,
+                speed: -(2 + Math.random() * 2),
+                width: 40,
+                height: 30,
+                passed: false,
+                frameIndex: 0
+            };
+        }
+
+        function createSilverBanana() {
+            return {
+                x: canvas.width + 50,
+                y: Math.random() * 450,
+                speed: -(2 + Math.random() * 2),
+                width: 60,
+                height: 30
+            };
+        }
+
+        function createStar(x, y) {
+            return {
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 5,
+                vy: -Math.random() * 5 - 2,
+                size: 5 + Math.random() * 5,
+                life: 20 + Math.random() * 10
+            };
+        }
+
+        function createSilverParticle(x, y) {
+            return {
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 3,
+                vy: (Math.random() - 0.5) * 3,
+                size: 2 + Math.random() * 3,
+                life: 30 + Math.random() * 20,
+                alpha: 1
+            };
+        }
+
+        function playSound(sound) {
+            sound.currentTime = 0;
+            sound.play().catch(error => console.log("Erro ao tocar som:", error));
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!gameOver && !isStarting) {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                let dx = mouseX - cannon.x;
+                let dy = mouseY - cannon.y;
+                cannon.angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+
+                shotPower = Math.sqrt(dx * dx + dy * dy) / 10;
+                shotPower = Math.min(Math.max(shotPower, 5), 25);
+            }
+        });
+
+        canvas.addEventListener('click', (e) => {
+            if (gameOver) {
+                resetGame();
+            } else if (!shooting && !isStarting) {
+                shooting = true;
+                banana.active = true;
+                banana.x = cannon.x + Math.cos(cannon.angle * Math.PI / 180) * cannon.length;
+                banana.y = cannon.y - Math.sin(cannon.angle * Math.PI / 180) * cannon.length;
+                banana.vx = Math.cos(cannon.angle * Math.PI / 180) * shotPower;
+                banana.vy = -Math.sin(cannon.angle * Math.PI / 180) * shotPower;
+                banana.rotation = cannon.angle * Math.PI / 180;
+                banana.chickensPassed = 0;
+
+                cannon.compression = 0;
+                cannon.compressionSpeed = 0.1;
+                cannon.compressionDuration = 10;
+
+                playSound(shootSound);
+            }
+        });
+
+        function drawCannon() {
+            ctx.save();
+            ctx.translate(cannon.x, cannon.y);
+            ctx.rotate(-cannon.angle * Math.PI / 180);
+
+            const currentWidth = cannon.baseWidth - (cannon.baseWidth - cannon.compressedWidth) * cannon.compression;
+            const cannonHeight = 42;
+            ctx.drawImage(cannonImage, 0, -cannonHeight / 2, currentWidth, cannonHeight);
+
+            ctx.restore();
+        }
+
+        function drawWheel() {
+            const wheelWidth = 227;
+            const wheelHeight = 151;
+            ctx.drawImage(wheelImage, cannon.x - wheelWidth / 2, cannon.y - wheelHeight / 2, wheelWidth, wheelHeight);
+        }
+
+        function drawBanana() {
+            if (banana.active) {
+                ctx.save();
+                ctx.translate(banana.x, banana.y);
+                ctx.rotate(banana.rotation);
+
+                const bananaWidth = 60;
+                const bananaHeight = 30;
+                ctx.drawImage(bananaImage, -bananaWidth / 2, -bananaHeight / 2, bananaWidth, bananaHeight);
+
+                ctx.restore();
+                banana.rotation += 0.1;
+            }
+        }
+
+        function drawSilverBanana(silverBanana) {
+            const bananaWidth = 60;
+            const bananaHeight = 30;
+            ctx.drawImage(silverBananaImage, silverBanana.x - bananaWidth / 2, silverBanana.y - bananaHeight / 2, bananaWidth, bananaHeight);
+        }
+
+        function drawHole() {
+            const holeWidth = 80;
+            const holeHeight = 50;
+            ctx.drawImage(holeImage, hole.x - holeWidth / 2, hole.y - holeHeight / 2, holeWidth, holeHeight);
+        }
+
+        function drawWall() {
+            // Parede invisível, apenas colisão mantida
+        }
+
+        function drawChicken(chicken) {
+            ctx.drawImage(chickenFrames[chicken.frameIndex], chicken.x - 65, chicken.y - 48.5, 130, 97);
+        }
+
+        function updateHole() {
+            if (!gameOver && !isStarting) {
+                hole.x += hole.speed * hole.direction;
+                if (hole.x <= hole.minX) {
+                    hole.direction = 1;
+                } else if (hole.x >= hole.maxX) {
+                    hole.direction = -1;
+                }
+            }
+        }
+
+        function updateCannonCompression() {
+            if (cannon.compressionDuration > 0 && !isStarting) {
+                cannon.compression += cannon.compressionSpeed;
+                cannon.compression = Math.min(cannon.compression, 1);
+                cannon.compressionDuration--;
+
+                if (cannon.compressionDuration === 0) {
+                    cannon.compressionSpeed = -0.1;
+                    let returnDuration = 15;
+
+                    function returnToNormal() {
+                        if (returnDuration > 0) {
+                            cannon.compression += cannon.compressionSpeed;
+                            cannon.compression = Math.max(cannon.compression, 0);
+                            returnDuration--;
+                            requestAnimationFrame(returnToNormal);
+                        } else {
+                            cannon.compression = 0;
+                        }
+                    }
+                    returnToNormal();
+                }
+            }
+        }
+
+        function updateChickens() {
+            if (!gameOver && !isStarting) {
+                for (let i = chickens.length - 1; i >= 0; i--) {
+                    let chicken = chickens[i];
+                    chicken.x += chicken.speed;
+
+                    if (chicken.x < -50) {
+                        chickens.splice(i, 1);
+                        continue;
+                    }
+
+                    if (banana.active) {
+                        if (
+                            banana.x + 30 > chicken.x - chicken.width / 2 &&
+                            banana.x - 30 < chicken.x + chicken.width / 2 &&
+                            banana.y + 15 > chicken.y - chicken.height / 2 &&
+                            banana.y - 15 < chicken.y + chicken.height / 2
+                        ) {
+                            resetBanana();
+                            lives--;
+                            playSound(hitChickenSound);
+
+                            for (let j = 0; j < 10; j++) {
+                                stars.push(createStar(chicken.x, chicken.y));
+                            }
+
+                            if (lives <= 0) {
+                                gameOver = true;
+                            }
+                        } else if (
+                            banana.x + 30 > chicken.x - chicken.width / 2 &&
+                            banana.x - 30 < chicken.x + chicken.width / 2 &&
+                            banana.y < chicken.y - chicken.height / 2 &&
+                            !chicken.passed
+                        ) {
+                            chicken.passed = true;
+                            banana.chickensPassed += 1;
+                        }
+                    }
+                }
+
+                const maxDifficulty = 0.02;
+                if (Math.random() < Math.min(chickenDifficulty, maxDifficulty)) {
+                    chickens.push(createChicken());
+                }
+
+                frameCounter++;
+                if (frameCounter >= animationSpeed) {
+                    chickens.forEach(chicken => {
+                        chicken.frameIndex = (chicken.frameIndex + 1) % totalChickenFrames;
+                    });
+                    frameCounter = 0;
+                }
+            }
+        }
+
+        function updateSilverBananas() {
+            if (!gameOver && !isStarting && lives < 10) {
+                if (silverBananas.length <= 0 && Math.random() < 0.001) {
+                    silverBananas.push(createSilverBanana());
+                }
+
+                for (let i = silverBananas.length - 1; i >= 0; i--) {
+                    let silverBanana = silverBananas[i];
+                    silverBanana.x += silverBanana.speed;
+
+                    if (silverBanana.x < -50) {
+                        silverBananas.splice(i, 1);
+                        continue;
+                    }
+
+                    if (banana.active) {
+                        if (
+                            banana.x + 30 > silverBanana.x - silverBanana.width / 2 &&
+                            banana.x - 30 < silverBanana.x + silverBanana.width / 2 &&
+                            banana.y + 15 > silverBanana.y - silverBanana.height / 2 &&
+                            banana.y - 15 < silverBanana.y + silverBanana.height / 2
+                        ) {
+                            if (lives < 10) {
+                                lives += 1;
+                                playSound(silverHitSound);
+                                for (let j = 0; j < 15; j++) {
+                                    silverParticles.push(createSilverParticle(silverBanana.x, silverBanana.y));
+                                }
+                            }
+                            silverBananas.splice(i, 1);
+                        }
+                    }
+                }
+            } else {
+                silverBananas = [];
+            }
+        }
+
+        function drawChickens() {
+            if (!isStarting) {
+                chickens.forEach(chicken => drawChicken(chicken));
+            }
+        }
+
+        function drawSilverBananas() {
+            if (!isStarting) {
+                silverBananas.forEach(silverBanana => drawSilverBanana(silverBanana));
+            }
+        }
+
+        function drawStar(star) {
+            ctx.save();
+            ctx.translate(star.x, star.y);
+
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                let angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+                let outerRadius = star.size;
+                let innerRadius = star.size / 2;
+                let x = Math.cos(angle) * (i % 2 === 0 ? outerRadius : innerRadius);
+                let y = Math.sin(angle) * (i % 2 === 0 ? outerRadius : innerRadius);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = 'gold';
+            ctx.fill();
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawSilverParticle(particle) {
+            ctx.save();
+            ctx.translate(particle.x, particle.y);
+            ctx.globalAlpha = particle.alpha;
+            ctx.beginPath();
+            ctx.arc(0, 0, particle.size, 0, Math.PI * 2);
+            ctx.fillStyle = 'silver';
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function updateStars() {
+            if (!isStarting) {
+                for (let i = stars.length - 1; i >= 0; i--) {
+                    let star = stars[i];
+                    star.x += star.vx;
+                    star.y += star.vy;
+                    star.vy += 0.2;
+                    star.life--;
+                    if (star.life <= 0) {
+                        stars.splice(i, 1);
+                    }
+                }
+            }
+        }
+
+        function updateSilverParticles() {
+            if (!isStarting) {
+                for (let i = silverParticles.length - 1; i >= 0; i--) {
+                    let particle = silverParticles[i];
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    particle.life--;
+                    particle.alpha = particle.life / 50;
+                    if (particle.life <= 0) {
+                        silverParticles.splice(i, 1);
+                    }
+                }
+            }
+        }
+
+        function drawStars() {
+            if (!isStarting) {
+                stars.forEach(star => drawStar(star));
+            }
+        }
+
+        function drawSilverParticles() {
+            if (!isStarting) {
+                silverParticles.forEach(particle => drawSilverParticle(particle));
+            }
+        }
+
+        function drawLifeBar() {
+            const barWidth = 200;
+            const barHeight = 20;
+            const barX = (canvas.width - barWidth) / 2;
+            const barY = 10;
+
+            ctx.fillStyle = 'gray';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+
+            ctx.fillStyle = lives > 3 ? 'green' : 'red';
+            const lifeWidth = (lives / 10) * barWidth;
+            ctx.fillRect(barX, barY, lifeWidth, barHeight);
+
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+            ctx.fillStyle = 'black';
+            ctx.font = '16px "Comic Sans MS"';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Vidas: ${lives}`, canvas.width / 2, barY + barHeight + 15);
+        }
+
+        function drawMessage() {
+            if (showMessage) {
+                ctx.font = 'bold 30px "Comic Sans MS"';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#2e2e48';
+                ctx.fillText('PARABÉNS, A BANANA ENTROU!', canvas.width / 2, 100);
+
+                messageTimer--;
+                if (messageTimer <= 0) {
+                    showMessage = false;
+                }
+            } else if (gameOver) {
+                ctx.drawImage(gameOverBackgroundImage, 0, 0, canvas.width, canvas.height);
+
+                ctx.font = 'bold 50px "Comic Sans MS"';
+                ctx.fillStyle = '#ffc108';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 3;
+                ctx.textAlign = 'center';
+                ctx.strokeText('GAME OVER', canvas.width / 2, canvas.height / 2 - 100);
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 100);
+
+                ctx.font = 'bold 30px "Comic Sans MS"';
+                ctx.fillStyle = '#2e2e48';
+                ctx.fillText(`Você fez a banana entrar ${holeHits} vezes`, canvas.width / 2, canvas.height / 2 - 30);
+
+                const extraPointsFromChickens = totalChickensPassed * 2;
+                ctx.font = 'bold 28px "Comic Sans MS"';
+                ctx.fillText(`A banana sobrevoou ${totalChickensPassed} galinhas antes de entrar (+${extraPointsFromChickens})`, canvas.width / 2, canvas.height / 2 + 10);
+
+                ctx.font = 'bold 34px "Comic Sans MS"';
+                ctx.fillText(`TOTAL DE PONTOS: ${score}`, canvas.width / 2, canvas.height / 2 + 50);
+
+                ctx.font = 'bold 20px "Comic Sans MS"';
+                ctx.fillText('Clique para reiniciar', canvas.width / 2, canvas.height / 2 + 90);
+            } else if (isStarting) {
+                const message = "ACERTE A BANANA NO BURACO";
+                ctx.font = '40px "Comic Sans MS"';
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'center';
+                const textWidth = ctx.measureText(message).width;
+                const padding = 20;
+                const boxWidth = textWidth + padding * 2;
+                const boxHeight = 80;
+                const boxX = (canvas.width - boxWidth) / 2;
+                const boxY = (canvas.height - boxHeight) / 2 - 20;
+
+                ctx.fillStyle = '#FFC107';
+                ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+                ctx.fillStyle = 'black';
+                ctx.fillText(message, canvas.width / 2, boxY + boxHeight / 2 + 10);
+
+                ctx.font = 'bold 30px "Comic Sans MS"';
+                ctx.fillText(Math.ceil(startCountdown), canvas.width / 2, boxY + boxHeight + 40);
+            }
+        }
+
+        function drawExtraPointsMessage() {
+            if (extraPointsMessage.active) {
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 40px "Comic Sans MS"';
+                ctx.fillStyle = '#ffc108';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+
+                const text = `+ ${extraPointsMessage.points}`;
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+
+                const t = extraPointsMessage.duration - extraPointsMessage.timer;
+                let scale;
+                if (t < 30) {
+                    scale = 1 + (t / 30) * 1.5;
+                } else {
+                    const decay = Math.exp(-0.1 * (t - 30));
+                    scale = 1 + 1.5 * decay * Math.cos(0.2 * (t - 30));
+                }
+
+                ctx.translate(centerX, centerY);
+                ctx.scale(scale, scale);
+                ctx.strokeText(text, 0, 0);
+                ctx.fillText(text, 0, 0);
+
+                ctx.restore();
+
+                extraPointsMessage.timer--;
+                if (extraPointsMessage.timer <= 0) {
+                    extraPointsMessage.active = false;
+                }
+            }
+        }
+
+        function drawPowerIndicator() {
+            if (!gameOver && !isStarting) {
+                const maxPower = 25;
+                const minPower = 5;
+                const powerRange = maxPower - minPower;
+                const numLines = 10;
+                const lineSpacing = 10;
+                const lineHeight = 10;
+                const startX = 10;
+                const startY = 30;
+
+                ctx.strokeStyle = 'blue';
+
+                const powerPercentage = (shotPower - minPower) / powerRange;
+                const activeLines = Math.min(Math.ceil(powerPercentage * numLines), numLines);
+
+                for (let i = 0; i < numLines; i++) {
+                    ctx.lineWidth = 1 + (i * 4 / (numLines - 1));
+                    const x = startX + i * lineSpacing;
+
+                    if (i < activeLines) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, startY - lineHeight / 2);
+                        ctx.lineTo(x, startY + lineHeight / 2);
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        function drawScore() {
+            if (!gameOver && !isStarting) {
+                ctx.font = 'bold 96px "Arial Black", "Comic Sans MS"';
+                ctx.fillStyle = '#ffc108';
+                ctx.textAlign = 'right';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 3;
+                const scoreText = `${score}`;
+
+                const textWidth = ctx.measureText(scoreText).width;
+                const maxX = canvas.width - 21;
+                const xPosition = Math.max(0, maxX - textWidth);
+                const yPosition = 99; // Alterado de 110 para 99 (movido 11 pixels para cima)
+
+                ctx.strokeText(scoreText, maxX, yPosition);
+                ctx.fillText(scoreText, maxX, yPosition);
+            }
+        }
+
+        function updateBanana() {
+            if (!gameOver && !isStarting && banana.active) {
+                banana.x += banana.vx;
+                banana.y += banana.vy;
+                banana.vy += gravity;
+
+                const holeWidth = 80;
+                let dx = banana.x - hole.x;
+                let dy = banana.y - hole.y;
+                if (Math.sqrt(dx * dx + dy * dy) < (holeWidth / 2) + 15) {
+                    const extraPoints = banana.chickensPassed * 2;
+                    score += 1 + extraPoints;
+                    holeHits += 1;
+                    totalChickensPassed += banana.chickensPassed;
+                    showMessage = true;
+                    messageTimer = 120;
+
+                    if (banana.chickensPassed > 0) {
+                        extraPointsMessage.active = true;
+                        extraPointsMessage.points = extraPoints;
+                        extraPointsMessage.timer = extraPointsMessage.duration;
+                    }
+
+                    resetBanana();
+                    playSound(hitHoleSound);
+
+                    for (let i = 0; i < 10; i++) {
+                        stars.push(createStar(hole.x, hole.y));
+                    }
+
+                    chickenDifficulty += 0.002;
+                }
+
+                if (
+                    banana.x + 30 > 450 - 25 &&
+                    banana.x - 30 < 450 + 25 &&
+                    banana.y + 15 > 454 &&
+                    banana.y - 15 < 554
+                ) {
+                    resetBanana();
+
+                    for (let i = 0; i < 10; i++) {
+                        stars.push(createStar(450, banana.y));
+                    }
+                }
+
+                if (banana.y > canvas.height || banana.x > canvas.width || banana.x < 0) {
+                    resetBanana();
+                }
+            }
+        }
+
+        function resetBanana() {
+            banana.active = false;
+            shooting = false;
+            banana.chickensPassed = 0;
+            chickens.forEach(chicken => chicken.passed = false);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+            drawWall();
+
+            if (isStarting) {
+                drawMessage();
+            } else if (!gameOver) {
+                updateCannonCompression();
+                drawCannon();
+                drawWheel();
+                drawBanana();
+                drawHole();
+                drawChickens();
+                updateChickens();
+                updateSilverBananas();
+                drawSilverBananas();
+                drawStars();
+                updateStars();
+                drawSilverParticles();
+                updateSilverParticles();
+                drawMessage();
+                drawExtraPointsMessage();
+                drawLifeBar();
+                drawPowerIndicator();
+                drawScore();
+                updateBanana();
+                updateHole();
+            } else {
+                drawChickens();
+                drawMessage();
+                drawLifeBar();
+            }
+            requestAnimationFrame(draw);
+
+            if (isStarting) {
+                startCountdown -= 1 / 60;
+                if (startCountdown <= 0) {
+                    isStarting = false;
+                    startCountdown = 5;
+                }
+            }
+
+            gameStarted = true;
+        }
+
+        let imagesLoaded = 0;
+        const totalImages = 7 + totalChickenFrames;
+
+        function handleImageLoad(imageName) {
+            imagesLoaded++;
+            console.log(`${imageName} carregada com sucesso. Total: ${imagesLoaded}/${totalImages}`);
+            if (imagesLoaded === totalImages) {
+                console.log("Todas as imagens carregaram. Iniciando o jogo...");
+                draw();
+            }
+        }
+
+        function handleImageError(imageName) {
+            console.error(`Erro ao carregar ${imageName}. Verifique o arquivo na pasta 'images/'.`);
+            window.location.reload();
+        }
+
+        backgroundImage.onload = () => handleImageLoad('background.png');
+        bananaImage.onload = () => handleImageLoad('banana.png');
+        holeImage.onload = () => handleImageLoad('hole.png');
+        cannonImage.onload = () => handleImageLoad('cannon.png');
+        wheelImage.onload = () => handleImageLoad('wheel.png');
+        silverBananaImage.onload = () => handleImageLoad('silverBanana.png');
+        gameOverBackgroundImage.onload = () => handleImageLoad('gameOverBackground.png');
+        chickenFrames.forEach((frame, index) => {
+            frame.onload = () => handleImageLoad(`chicken_${(index + 1).toString().padStart(2, '0')}.png`);
+            frame.onerror = () => handleImageError(`chicken_${(index + 1).toString().padStart(2, '0')}.png`);
+        });
+
+        backgroundImage.onerror = () => handleImageError('background.png');
+        bananaImage.onerror = () => handleImageError('banana.png');
+        holeImage.onerror = () => handleImageError('hole.png');
+        cannonImage.onerror = () => handleImageError('cannon.png');
+        wheelImage.onerror = () => handleImageError('wheel.png');
+        silverBananaImage.onerror = () => handleImageError('silverBanana.png');
+        gameOverBackgroundImage.onerror = () => handleImageError('gameOverBackground.png');
+
+        setTimeout(() => {
+            if (!gameStarted) {
+                console.log("O jogo não iniciou em 10 segundos. Recarregando a página...");
+                window.location.reload();
+            }
+        }, 10000);
+    </script>
+</body>
+</html>
