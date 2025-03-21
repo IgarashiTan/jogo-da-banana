@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <title>Jogo do Canhão de Banana</title>
     <style>
+        body {
+            background-color: #181c22;
+        }
         canvas {
             border: 1px solid black;
             display: block;
@@ -641,7 +644,7 @@
                 const textWidth = ctx.measureText(scoreText).width;
                 const maxX = canvas.width - 21;
                 const xPosition = Math.max(0, maxX - textWidth);
-                const yPosition = 99; // Alterado de 110 para 99 (movido 11 pixels para cima)
+                const yPosition = 99;
 
                 ctx.strokeText(scoreText, maxX, yPosition);
                 ctx.fillText(scoreText, maxX, yPosition);
